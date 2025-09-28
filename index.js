@@ -18,7 +18,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
-  'https://your-frontend-domain.vercel.app', // add your deployed frontend domain here
+  process.env.FRONTEND_URL, // add your deployed frontend domain here
 ];
 
 const corsOptions = {
