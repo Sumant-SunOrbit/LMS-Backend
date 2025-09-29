@@ -3,41 +3,53 @@
 const mongoose = require('mongoose');
 const { GridFSBucket } = require('mongodb');
 
-let bucket;       // GridFS bucket instance
-let isConnected;  // Track MongoDB connection status
+let connPromise = null; // This will cache the connection promise
+let bucket = null;      // This will cache the GridFS bucket instance
 
 const connectDB = async () => {
-  if (isConnected) {
-    console.log("⚡ Using existing MongoDB connection.");
-    return;
+  // If the connection promise already exists, reuse it.
+  // This prevents creating a new connection for concurrent requests.
+  if (connPromise) {
+    console.log("⚡ Reusing existing MongoDB connection promise.");
+    return connPromise;
   }
 
-  try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+  // If no promise exists, create a new one.
+  console.log("=> Creating new MongoDB connection.");
+  connPromise = (async () => {
+    try {
+      const conn = await mongoose.connect(process.env.MONGO_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+      });
 
-    isConnected = conn.connections[0].readyState;
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+      console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
 
-    // Initialize GridFSBucket once after connection
-    const db = conn.connection.db;
-    bucket = new GridFSBucket(db, {
-      bucketName: 'uploads', // Collection name where files are stored
-    });
-    console.log('✅ GridFS Bucket initialized.');
-  } catch (error) {
-    console.error(`❌ Error connecting to MongoDB: ${error.message}`);
-    process.exit(1);
-  }
+      // Initialize GridFSBucket once after connection
+      const db = conn.connection.db;
+      bucket = new GridFSBucket(db, {
+        bucketName: 'uploads', // Collection name where files are stored
+      });
+      console.log('✅ GridFS Bucket initialized.');
+
+      return conn; // Return the successful connection
+    } catch (error) {
+      console.error(`❌ Error connecting to MongoDB: ${error.message}`);
+      // Set promise to null on failure to allow retry on the next request
+      connPromise = null; 
+      process.exit(1); // Or handle error without exiting for serverless
+    }
+  })();
+
+  // Return the new promise
+  return connPromise;
 };
 
 // Helper to access the initialized bucket
 const getBucket = () => {
   if (!bucket) {
     throw new Error(
-      "❌ GridFS Bucket not initialized. Call connectDB() before using getBucket()."
+      "❌ GridFS Bucket not initialized. Ensure connectDB() has been successfully awaited."
     );
   }
   return bucket;
